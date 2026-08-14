@@ -50,6 +50,18 @@ test("getGrokAuthStatus treats failed models as not logged in", () => {
   assert.match(auth.detail, /Not logged in|not logged in|failed/i);
 });
 
+test("getGrokAuthStatus treats a zero-exit unauthenticated probe as not logged in", () => {
+  const binDir = makeTempDir();
+  installFakeGrok(binDir, "not-authenticated");
+  const env = buildEnv(binDir);
+
+  const auth = getGrokAuthStatus(process.cwd(), { env });
+  assert.equal(auth.loggedIn, false);
+  assert.equal(auth.verified, false);
+  assert.equal(auth.authMethod, null);
+  assert.match(auth.detail, /not authenticated/i);
+});
+
 test("runHeadlessAgent captures stdout and session id from fake grok", async () => {
   const binDir = makeTempDir();
   installFakeGrok(binDir);

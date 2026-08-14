@@ -105,17 +105,19 @@ export function runModelsProbe(cwd, options = {}) {
     });
   }
 
+  // `grok models` exits 0 whether or not the CLI is authenticated, and prints the
+  // model roster in both states, so exit status and the presence of "available
+  // models" cannot distinguish them. Detect the unauthenticated banner instead.
   const stdout = (result.stdout || "").trim();
-  const loggedInHint = /logged in|available models|default model/i.test(stdout);
+  const notAuthenticated = /not authenticated|not logged in|please log in/i.test(stdout);
+  const loggedIn = !notAuthenticated && /logged in/i.test(stdout);
   return buildAuthStatus({
     available: true,
-    loggedIn: true,
-    detail: loggedInHint
-      ? firstLine(stdout) || "grok models succeeded"
-      : firstLine(stdout) || "grok models succeeded (treated as logged in)",
+    loggedIn,
+    detail: firstLine(stdout) || "grok models succeeded",
     source: "models-probe",
-    authMethod: "grok-cli",
-    verified: true
+    authMethod: loggedIn ? "grok-cli" : null,
+    verified: loggedIn
   });
 }
 
