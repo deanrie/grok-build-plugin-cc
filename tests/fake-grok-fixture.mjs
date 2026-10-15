@@ -7,7 +7,7 @@ import { writeExecutable } from "./helpers.mjs";
 /**
  * Install a fake `grok` binary that responds to version/models/-p/import for hermetic tests.
  * @param {string} binDir directory that will be prepended to PATH
- * @param {"default"|"not-logged-in"|"not-authenticated"|"fail-print"|"import-ok"|"reject-json-schema"} scenario
+ * @param {"default"|"not-logged-in"|"not-authenticated"|"fail-print"|"import-ok"|"reject-json-schema"|"api-key"|"deployment-key"} scenario
  */
 export function installFakeGrok(binDir, scenario = "default") {
   fs.mkdirSync(binDir, { recursive: true });
@@ -55,6 +55,14 @@ if (argv[0] === "models") {
   if (scenario === "not-authenticated") {
     // Mirrors grok CLI 1.0.3: exits 0 and still prints the roster when logged out.
     process.stdout.write("You are not authenticated.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n");
+    process.exit(0);
+  }
+  if (scenario === "api-key") {
+    process.stdout.write("You are using XAI_API_KEY.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n");
+    process.exit(0);
+  }
+  if (scenario === "deployment-key") {
+    process.stdout.write("You are authenticated via deployment key.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n");
     process.exit(0);
   }
   process.stdout.write("You are logged in with grok.com.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n");

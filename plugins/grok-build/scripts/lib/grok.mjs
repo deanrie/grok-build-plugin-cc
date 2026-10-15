@@ -139,15 +139,35 @@ export function runModelsProbe(cwd, options = {}) {
   // model roster in both states, so exit status and the presence of "available
   // models" cannot distinguish them. Detect the unauthenticated banner instead.
   const stdout = (result.stdout || "").trim();
-  const notAuthenticated = /not authenticated|not logged in|please log in/i.test(stdout);
-  const loggedIn = !notAuthenticated && /logged in/i.test(stdout);
+  // `grok models` prints exactly one auth banner as its first line
+  // (xai-grok-pager/src/models.rs): "You are not authenticated.",
+  // "You are logged in with <host>.", "You are using XAI_API_KEY.",
+  // "Model '<m>' is using its own API key.", or
+  // "You are authenticated via deployment key.". Only the first one means
+  // the CLI cannot make calls; the other four are all usable credentials.
+  const notAuthenticated = /^You are not authenticated\.|not logged in|please log in/im.test(stdout);
+  const authBanner =
+    /^(You are logged in with |You are using XAI_API_KEY|Model '.*' is using its own API key|You are authenticated via deployment key)/im.exec(
+      stdout
+    );
+  const authMethod = notAuthenticated
+    ? null
+    : authBanner
+      ? authBanner[1].startsWith("You are logged in")
+        ? "grok-cli"
+        : "api-key"
+      : "unknown";
+  // An unrecognised banner (future CLI wording) stays loggedIn so the gate does
+  // not block, but is reported as unverified.
+  const loggedIn = !notAuthenticated;
+  const verified = !notAuthenticated && authBanner !== null;
   return buildAuthStatus({
     available: true,
     loggedIn,
     detail: firstLine(stdout) || "grok models succeeded",
     source: "models-probe",
-    authMethod: loggedIn ? "grok-cli" : null,
-    verified: loggedIn
+    authMethod,
+    verified
   });
 }
 

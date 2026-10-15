@@ -62,6 +62,19 @@ test("getGrokAuthStatus treats a zero-exit unauthenticated probe as not logged i
   assert.match(auth.detail, /not authenticated/i);
 });
 
+test("getGrokAuthStatus treats API-key and deployment-key banners as authenticated", () => {
+  for (const scenario of ["api-key", "deployment-key"]) {
+    const binDir = makeTempDir();
+    installFakeGrok(binDir, scenario);
+    const env = buildEnv(binDir);
+
+    const auth = getGrokAuthStatus(process.cwd(), { env });
+    assert.equal(auth.loggedIn, true, scenario);
+    assert.equal(auth.verified, true, scenario);
+    assert.equal(auth.authMethod, "api-key", scenario);
+  }
+});
+
 test("runHeadlessAgent passes --json-schema when supported", async () => {
   const binDir = makeTempDir();
   installFakeGrok(binDir);
