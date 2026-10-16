@@ -145,7 +145,11 @@ export function runModelsProbe(cwd, options = {}) {
   // "Model '<m>' is using its own API key.", or
   // "You are authenticated via deployment key.". Only the first one means
   // the CLI cannot make calls; the other four are all usable credentials.
-  const notAuthenticated = /^You are not authenticated\.|not logged in|please log in/im.test(stdout);
+  // The exact banner may match on any line; the looser phrases only on the
+  // first line, so advisory text further down ("please log in again if a
+  // model is unavailable") cannot flip a usable credential to logged-out.
+  const notAuthenticated =
+    /^You are not authenticated\./m.test(stdout) || /not logged in|please log in/i.test(firstLine(stdout) ?? "");
   const authBanner =
     /^(You are logged in with |You are using XAI_API_KEY|Model '.*' is using its own API key|You are authenticated via deployment key)/im.exec(
       stdout

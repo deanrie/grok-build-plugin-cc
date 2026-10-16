@@ -61,6 +61,14 @@ if (argv[0] === "models") {
     process.stdout.write("You are using XAI_API_KEY.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n");
     process.exit(0);
   }
+  if (scenario === "api-key-advisory") {
+    // Usable credential, with advisory wording further down that mentions
+    // logging in. Must still count as authenticated.
+    process.stdout.write(
+      "You are using XAI_API_KEY.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n\\nNote: if a model is unavailable, please log in again.\\n"
+    );
+    process.exit(0);
+  }
   if (scenario === "deployment-key") {
     process.stdout.write("You are authenticated via deployment key.\\n\\nDefault model: fake-model\\n\\nAvailable models:\\n  - fake-model\\n");
     process.exit(0);

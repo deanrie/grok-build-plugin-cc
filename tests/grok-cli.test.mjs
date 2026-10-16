@@ -75,6 +75,17 @@ test("getGrokAuthStatus treats API-key and deployment-key banners as authenticat
   }
 });
 
+test("getGrokAuthStatus ignores log-in advisories below the auth banner", () => {
+  const binDir = makeTempDir();
+  installFakeGrok(binDir, "api-key-advisory");
+  const env = buildEnv(binDir);
+
+  const auth = getGrokAuthStatus(process.cwd(), { env });
+  assert.equal(auth.loggedIn, true);
+  assert.equal(auth.verified, true);
+  assert.equal(auth.authMethod, "api-key");
+});
+
 test("runHeadlessAgent passes --json-schema when supported", async () => {
   const binDir = makeTempDir();
   installFakeGrok(binDir);
