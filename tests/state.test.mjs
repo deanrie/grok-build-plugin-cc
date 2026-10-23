@@ -6,12 +6,14 @@ import assert from "node:assert/strict";
 
 import { makeTempDir } from "./helpers.mjs";
 import {
+  ensureStateDir,
   loadState,
   resolveJobFile,
   resolveJobLogFile,
   resolveStateDir,
   resolveStateFile,
-  saveState
+  saveState,
+  withStateLock
 } from "../plugins/grok-build/scripts/lib/state.mjs";
 
 test("resolveStateDir uses a temp-backed per-workspace directory", () => {
@@ -125,4 +127,52 @@ test("loadState returns default state when the file is missing", () => {
   assert.equal(state.version, 1);
   assert.deepEqual(state.jobs, []);
   assert.deepEqual(state.config, {});
+});
+
+test("withStateLock removes a lock whose owner process is gone", () => {
+  const workspace = makeTempDir();
+  ensureStateDir(workspace);
+  const lockPath = path.join(resolveStateDir(workspace), "state.json.lock");
+  fs.writeFileSync(lockPath, "999999\n", "utf8");
+
+  const startedAt = Date.now();
+  const result = withStateLock(workspace, () => "ran", { processExistsImpl: () => false });
+
+  assert.equal(result, "ran");
+  assert.ok(Date.now() - startedAt < 1000, "a dead lock must not consume the retry budget");
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("withStateLock removes a lock with no owner pid once it is older than the stale window", () => {
+  const workspace = makeTempDir();
+  ensureStateDir(workspace);
+  const lockPath = path.join(resolveStateDir(workspace), "state.json.lock");
+  fs.writeFileSync(lockPath, "", "utf8");
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(lockPath, old, old);
+
+  const result = withStateLock(workspace, () => "ran");
+
+  assert.equal(result, "ran");
+  assert.equal(fs.existsSync(lockPath), false);
+});
+
+test("withStateLock keeps waiting on a fresh lock held by a live process", () => {
+  const workspace = makeTempDir();
+  ensureStateDir(workspace);
+  const lockPath = path.join(resolveStateDir(workspace), "state.json.lock");
+  fs.writeFileSync(lockPath, `${process.pid}\n`, "utf8");
+
+  assert.throws(() => withStateLock(workspace, () => "ran"), /Timed out acquiring state lock/);
+  assert.equal(fs.existsSync(lockPath), true);
+});
+
+test("withStateLock records the owner pid while the lock is held", () => {
+  const workspace = makeTempDir();
+  const lockPath = path.join(resolveStateDir(workspace), "state.json.lock");
+
+  const seen = withStateLock(workspace, () => fs.readFileSync(lockPath, "utf8").trim());
+
+  assert.equal(seen, String(process.pid));
+  assert.equal(fs.existsSync(lockPath), false);
 });

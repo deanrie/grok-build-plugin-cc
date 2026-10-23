@@ -14,6 +14,7 @@ const JOBS_DIR_NAME = "jobs";
 const MAX_JOBS = 50;
 const LOCK_MAX_ATTEMPTS = 100;
 const LOCK_RETRY_MS = 20;
+const LOCK_STALE_MS = 30_000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -86,7 +87,40 @@ function writeFileAtomic(filePath, content) {
   fs.renameSync(tempPath, filePath);
 }
 
-export function withStateLock(cwd, fn) {
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== "ESRCH";
+  }
+}
+
+/**
+ * A lock left behind by a bridge that died inside the critical section
+ * (SIGKILL from stop, taskkill /F, a crash) would otherwise block every
+ * later command for good. The lock records its owner pid; a lock whose
+ * owner is gone, or that is older than LOCK_STALE_MS, is removed.
+ */
+function isStaleLock(lockPath, options = {}) {
+  const processExistsImpl = options.processExistsImpl ?? processExists;
+  const staleMs = options.staleMs ?? LOCK_STALE_MS;
+  let stat;
+  let content = "";
+  try {
+    stat = fs.statSync(lockPath);
+    content = fs.readFileSync(lockPath, "utf8");
+  } catch (error) {
+    return error?.code === "ENOENT";
+  }
+  const ownerPid = Number.parseInt(content.trim(), 10);
+  if (Number.isInteger(ownerPid) && ownerPid > 0 && !processExistsImpl(ownerPid)) {
+    return true;
+  }
+  return Date.now() - stat.mtimeMs > staleMs;
+}
+
+export function withStateLock(cwd, fn, options = {}) {
   ensureStateDir(cwd);
   const lockPath = path.join(resolveStateDir(cwd), LOCK_FILE_NAME);
 
@@ -96,6 +130,13 @@ export function withStateLock(cwd, fn) {
       fd = fs.openSync(lockPath, "wx");
     } catch (error) {
       if (error?.code === "EEXIST") {
+        if (isStaleLock(lockPath, options)) {
+          try {
+            fs.unlinkSync(lockPath);
+          } catch {
+          }
+          continue;
+        }
         sleepMs(LOCK_RETRY_MS);
         continue;
       }
@@ -103,6 +144,7 @@ export function withStateLock(cwd, fn) {
     }
 
     try {
+      fs.writeSync(fd, `${process.pid}\n`);
       return fn();
     } finally {
       try {
