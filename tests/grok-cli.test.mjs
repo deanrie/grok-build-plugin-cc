@@ -160,3 +160,36 @@ test("live grok --help advertises headless flags when grok is on PATH", () => {
     assert.match(text, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
+
+test("parseStructuredOutput skips a non-JSON fence that precedes the JSON block", () => {
+  const raw = [
+    "I ran the suite first:",
+    "```bash",
+    "npm test",
+    "```",
+    "Then the review:",
+    "```json",
+    '{"verdict":"approve","summary":"ok","findings":[],"next_steps":[]}',
+    "```"
+  ].join("\n");
+  const parsed = parseStructuredOutput(raw);
+  assert.equal(parsed.parseError, null);
+  assert.equal(parsed.parsed.verdict, "approve");
+});
+
+test("parseStructuredOutput prefers the json-tagged fence over an untagged one", () => {
+  const raw = "```\nnot json\n```\n```json\n{\"verdict\":\"needs-attention\",\"summary\":\"x\",\"findings\":[],\"next_steps\":[]}\n```";
+  const parsed = parseStructuredOutput(raw);
+  assert.equal(parsed.parseError, null);
+  assert.equal(parsed.parsed.verdict, "needs-attention");
+});
+
+test("parseStructuredOutput still reads a single-line fence and reports the JSON error when nothing parses", () => {
+  const inline = parseStructuredOutput('```{"verdict":"approve","summary":"ok","findings":[],"next_steps":[]}```');
+  assert.equal(inline.parseError, null);
+  assert.equal(inline.parsed.verdict, "approve");
+
+  const broken = parseStructuredOutput("```json\n{\"verdict\": }\n```");
+  assert.equal(broken.parsed, null);
+  assert.match(broken.parseError, /JSON/);
+});
