@@ -153,28 +153,6 @@ function emitProgress(onProgress, message, phase = null, extra = {}) {
   onProgress({ message, phase, ...extra });
 }
 
-/**
- * The most prompt that goes on the command line as `-p <prompt>`. Linux caps one argv string at 128 KiB
- * (MAX_ARG_STRLEN) and Windows the whole command line at 32,767 characters; a review or critique prompt that
- * inlines a diff or untracked files passes both and the spawn fails with E2BIG / ENAMETOOLONG before grok
- * starts. Above this, or when the prompt starts with "-" (which the CLI's parser reads as a flag), the prompt
- * is written to a file and passed with `--prompt-file`, which also keeps it out of process listings.
- */
-export function promptArgvLimitBytes(platform = process.platform) {
-  return platform === "win32" ? 16 * 1024 : 64 * 1024;
-}
-
-export function promptNeedsFile(prompt, platform = process.platform) {
-  return prompt.startsWith("-") || Buffer.byteLength(prompt, "utf8") > promptArgvLimitBytes(platform);
-}
-
-function writePromptFile(prompt) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-cc-prompt-"));
-  const file = path.join(dir, "prompt.md");
-  fs.writeFileSync(file, prompt, "utf8");
-  return { file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
-}
-
 function buildHeadlessArgs(prompt, options = {}) {
   const args = [];
 
@@ -238,35 +216,29 @@ export function runHeadlessAgent(cwd, options = {}) {
     ? options.resumeSessionId
     : options.sessionId || (options.assignSessionId === false ? null : crypto.randomUUID());
 
-  const platform = options.platform ?? process.platform;
-  const detached = options.detached ?? platform !== "win32";
-
-  const promptFile = options.promptFile ?? (promptNeedsFile(prompt, platform) ? writePromptFile(prompt) : null);
-  const promptFilePath = typeof promptFile === "string" ? promptFile : promptFile?.file;
-  const removePromptFile = typeof promptFile === "string" ? () => {} : (promptFile?.cleanup ?? (() => {}));
-
+  const promptFile = options.promptFile
+    ? null
+    : promptNeedsFile(prompt, options.platform ?? process.platform)
+      ? writePromptFile(prompt)
+      : null;
   const args = buildHeadlessArgs(prompt, {
     ...options,
     cwd: options.cwd ?? cwd,
     sessionId: options.resumeSessionId || options.continueLast ? undefined : sessionId,
-    promptFile: promptFilePath
+    promptFile: options.promptFile ?? promptFile?.file
   });
 
+  const platform = options.platform ?? process.platform;
+  const detached = options.detached ?? platform !== "win32";
+
   return new Promise((resolve, reject) => {
-    let child;
-    try {
-      child = spawn(binary, args, {
-        cwd,
-        env: options.env ?? process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached,
-        windowsHide: true
-      });
-    } catch (error) {
-      removePromptFile();
-      reject(error);
-      return;
-    }
+    const child = spawn(binary, args, {
+      cwd,
+      env: options.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached,
+      windowsHide: true
+    });
 
     const agentPid = child.pid ?? null;
     emitProgress(options.onProgress, `Running grok (${binary}).`, "starting", {
@@ -288,12 +260,12 @@ export function runHeadlessAgent(cwd, options = {}) {
     });
 
     child.on("error", (error) => {
-      removePromptFile();
+      promptFile?.cleanup();
       reject(error);
     });
 
     child.on("close", (code, signal) => {
-      removePromptFile();
+      promptFile?.cleanup();
       const status = code ?? (signal ? 1 : 0);
       emitProgress(
         options.onProgress,
@@ -490,4 +462,26 @@ export function buildReviewPrompt({ targetLabel, focusText, collectionGuidance, 
     schemaInstructions ? `\n${schemaInstructions}` : ""
   ];
   return parts.filter((line) => line !== undefined).join("\n");
+}
+
+/**
+ * The most prompt that goes on the command line as `-p <prompt>`. Linux caps one argv string at 128 KiB
+ * (MAX_ARG_STRLEN) and Windows the whole command line at 32,767 characters; a review or critique prompt that
+ * inlines a diff or untracked files passes both and the spawn fails with E2BIG / ENAMETOOLONG before grok
+ * starts. Above this, or when the prompt starts with "-" (which the CLI's parser reads as a flag), the prompt
+ * is written to a file and passed with `--prompt-file`, which also keeps it out of process listings.
+ */
+export function promptArgvLimitBytes(platform = process.platform) {
+  return platform === "win32" ? 16 * 1024 : 64 * 1024;
+}
+
+export function promptNeedsFile(prompt, platform = process.platform) {
+  return prompt.startsWith("-") || Buffer.byteLength(prompt, "utf8") > promptArgvLimitBytes(platform);
+}
+
+function writePromptFile(prompt) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "grok-cc-prompt-"));
+  const file = path.join(dir, "prompt.md");
+  fs.writeFileSync(file, prompt, "utf8");
+  return { file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }

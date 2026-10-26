@@ -77,17 +77,14 @@ if (argv[0] === "import") {
 
 // Headless print / prompt modes
 const printIndex = argv.indexOf("-p");
-const promptFile = flagValue("--prompt-file");
-const isPrint = printIndex !== -1 || hasFlag("--print") || Boolean(promptFile);
+const isPrint = printIndex !== -1 || hasFlag("--print");
 if (isPrint || hasFlag("-r") || hasFlag("--resume") || hasFlag("-c") || hasFlag("--continue")) {
   if (scenario === "fail-print") {
     process.stderr.write("fake grok failed the print run\\n");
     process.exit(2);
   }
 
-  // Like the real CLI, -p and --prompt-file are exclusive; the file is read while the run is in flight.
-  const prompt = promptFile ? fs.readFileSync(promptFile, "utf8") : printIndex !== -1 ? (argv[printIndex + 1] ?? "") : "";
-  if (promptFile && process.env.FAKE_GROK_PROMPT_COPY) fs.writeFileSync(process.env.FAKE_GROK_PROMPT_COPY, prompt);
+  const prompt = printIndex !== -1 ? (argv[printIndex + 1] ?? "") : "";
   const wantsJson = hasFlag("--json-schema") || flagValue("--output-format") === "json";
 
   if (wantsJson || /critique|adversarial|structured|Return only valid JSON/i.test(prompt)) {

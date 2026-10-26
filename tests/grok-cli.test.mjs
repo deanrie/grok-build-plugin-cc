@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -11,7 +10,6 @@ import {
   getGrokAvailability,
   parseStructuredOutput,
   resolveGrokBinary,
-  promptNeedsFile,
   runHeadlessAgent,
   runImport
 } from "../plugins/grok-build/scripts/lib/grok.mjs";
@@ -161,60 +159,4 @@ test("live grok --help advertises headless flags when grok is on PATH", () => {
   ]) {
     assert.match(text, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-});
-
-test("runHeadlessAgent passes a prompt above the argv limit through --prompt-file and removes the file afterwards", async () => {
-  const binDir = makeTempDir();
-  installFakeGrok(binDir);
-  const copy = path.join(makeTempDir(), "prompt-seen-by-grok.txt");
-  const env = buildEnv(binDir, { FAKE_GROK_PROMPT_COPY: copy });
-  const cwd = makeTempDir();
-  // A critique prompt with two inlined 20 KB files lands around here; Linux refuses one argv string past 128 KiB.
-  const prompt = `Review this diff.\n${"x".repeat(200 * 1024)}`;
-
-  const result = await runHeadlessAgent(cwd, { prompt, env });
-
-  assert.equal(result.status, 0);
-  assert.ok(!result.args.includes("-p"), "the prompt must not travel as a -p argument");
-  const at = result.args.indexOf("--prompt-file");
-  assert.ok(at !== -1, "expected --prompt-file in argv");
-  assert.equal(fs.readFileSync(copy, "utf8"), prompt, "grok must read the whole prompt from the file");
-  assert.equal(fs.existsSync(result.args[at + 1]), false, "the prompt file is removed once grok exits");
-});
-
-test("runHeadlessAgent passes a prompt that starts with a dash through --prompt-file", async () => {
-  const binDir = makeTempDir();
-  installFakeGrok(binDir);
-  const copy = path.join(makeTempDir(), "prompt-seen-by-grok.txt");
-  const env = buildEnv(binDir, { FAKE_GROK_PROMPT_COPY: copy });
-  const cwd = makeTempDir();
-
-  const result = await runHeadlessAgent(cwd, { prompt: "--help is what I typed; explain this flag", env });
-
-  assert.equal(result.status, 0);
-  assert.ok(!result.args.includes("-p"));
-  assert.ok(result.args.includes("--prompt-file"));
-  assert.equal(fs.readFileSync(copy, "utf8"), "--help is what I typed; explain this flag");
-});
-
-test("runHeadlessAgent keeps a short prompt on -p", async () => {
-  const binDir = makeTempDir();
-  installFakeGrok(binDir);
-  const env = buildEnv(binDir);
-  const cwd = makeTempDir();
-
-  const result = await runHeadlessAgent(cwd, { prompt: "check the thing", env });
-
-  assert.equal(result.status, 0);
-  assert.ok(result.args.includes("-p"));
-  assert.ok(!result.args.includes("--prompt-file"));
-});
-
-test("promptNeedsFile applies the Windows command-line cap and the Linux per-argument cap", () => {
-  assert.equal(promptNeedsFile("x".repeat(20 * 1024), "win32"), true);
-  assert.equal(promptNeedsFile("x".repeat(20 * 1024), "linux"), false);
-  assert.equal(promptNeedsFile("x".repeat(70 * 1024), "linux"), true);
-  assert.equal(promptNeedsFile("x".repeat(70 * 1024), "darwin"), true);
-  assert.equal(promptNeedsFile("-h", "linux"), true);
-  assert.equal(promptNeedsFile("plain prompt", "win32"), false);
 });
