@@ -184,6 +184,27 @@ test("parseStructuredOutput prefers the json-tagged fence over an untagged one",
   assert.equal(parsed.parsed.verdict, "needs-attention");
 });
 
+test("parseStructuredOutput survives a code fence inside a finding body", () => {
+  // A recommendation that quotes code closes the outer ```json fence early,
+  // so the fence scan yields truncated JSON; the brace scan must still win.
+  const body = "Use ```js\nfoo()\n``` instead of the loop.";
+  const object = JSON.stringify(
+    {
+      verdict: "needs-attention",
+      summary: "one finding",
+      findings: [{ severity: "low", title: "loop", body, file: "a.js", line_start: 3 }],
+      next_steps: []
+    },
+    null,
+    2
+  );
+  for (const raw of [`\`\`\`json\n${object}\n\`\`\``, `Notes first.\n${object}`]) {
+    const parsed = parseStructuredOutput(raw);
+    assert.equal(parsed.parseError, null, raw.slice(0, 20));
+    assert.equal(parsed.parsed.findings[0].body, body);
+  }
+});
+
 test("parseStructuredOutput still reads a single-line fence and reports the JSON error when nothing parses", () => {
   const inline = parseStructuredOutput('```{"verdict":"approve","summary":"ok","findings":[],"next_steps":[]}```');
   assert.equal(inline.parseError, null);
